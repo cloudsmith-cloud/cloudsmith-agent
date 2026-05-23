@@ -1,5 +1,6 @@
 // Copyright 2026 CloudSmith Contributors
 // SPDX-License-Identifier: Apache-2.0
+// TODO(AB#1664-followup): rename type to Agent
 
 namespace CloudSmith.Runner;
 

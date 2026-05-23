@@ -12,11 +12,11 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSerilog((cfg) => cfg
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
-    .Enrich.WithProperty("service", "cloudsmith-runner")
+    .Enrich.WithProperty("service", "cloudsmith-agent")
     .WriteTo.Console());
 
 builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("cloudsmith-runner"))
+    .ConfigureResource(r => r.AddService("cloudsmith-agent"))
     .WithTracing(t => t.AddOtlpExporter(o =>
         o.Endpoint = new Uri(builder.Configuration["Otel:Endpoint"] ?? "http://localhost:4317")));
 

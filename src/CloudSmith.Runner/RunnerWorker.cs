@@ -1,5 +1,6 @@
 // Copyright 2026 CloudSmith Contributors
 // SPDX-License-Identifier: Apache-2.0
+// TODO(AB#1664-followup): rename type to Agent
 
 using CloudSmith.Runner.SignalR;
 
@@ -18,7 +19,7 @@ public sealed class RunnerWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Runner starting — connecting to control channel");
+        _logger.LogInformation("Agent starting — connecting to control channel");
 
         try
         {
@@ -26,7 +27,7 @@ public sealed class RunnerWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to connect runner to control channel. Will retry on reconnect.");
+            _logger.LogError(ex, "Failed to connect Agent to control channel. Will retry on reconnect.");
         }
 
         // Keep alive until shutdown — reconnection is handled by RunnerHubClient's WithAutomaticReconnect
@@ -35,7 +36,7 @@ public sealed class RunnerWorker : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Runner shutting down");
+        _logger.LogInformation("Agent shutting down");
         await base.StopAsync(cancellationToken);
         await _hub.DisposeAsync();
     }
