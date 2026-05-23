@@ -9,6 +9,18 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>CS1591</NoWarn>
+    <!--
+      NOTE (AB#1664): Assembly/Root namespace still say "Runner" because renaming
+      types/namespaces breaks the NuGet contract — that's a follow-up after
+      cloudsmith-relay (AB#1665) ships. Package-facing metadata below is "Agent".
+    -->
+    <PackageId>CloudSmith.Agent</PackageId>
+    <Title>CloudSmith Agent</Title>
+    <Description>CloudSmith Agent — per-host Windows Service (mTLS enrollment, job dispatch, WinRM/Redfish payload execution). Part of the CloudSmith open-source cloud platform management solution.</Description>
+    <Authors>CloudSmith Contributors</Authors>
+    <Company>CloudSmith</Company>
+    <Product>CloudSmith Agent</Product>
+    <AssemblyTitle>CloudSmith Agent</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>
