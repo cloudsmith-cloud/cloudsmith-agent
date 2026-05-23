@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net9.0-windows</TargetFramework>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>false</SelfContained>
+    <!-- net9.0 (cross-platform) so CI can build on ubuntu-latest.
+         The win-x64 self-contained publish is done separately in the publish-release
+         job using -r win-x64 --self-contained (see ci.yml). The assembly runs as a
+         Windows Service in production but the SDK and tests build fine cross-platform. -->
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>CloudSmith.Runner</RootNamespace>
