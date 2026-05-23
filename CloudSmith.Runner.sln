@@ -5,7 +5,7 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CloudSmith.Runner", "src\CloudSmith.Runner\CloudSmith.Runner.csproj", "{A1B2C3D4-E5F6-7890-ABCD-123456789021}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CloudSmith.Runner.Tests", "src\CloudSmith.Runner.Tests\CloudSmith.Runner.Tests.csproj", "{B2C3D4E5-F6A7-8901-BCDE-234567890022}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CloudSmith.Runner.Tests", "tests\CloudSmith.Runner.Tests\CloudSmith.Runner.Tests.csproj", "{B2C3D4E5-F6A7-8901-BCDE-234567890022}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

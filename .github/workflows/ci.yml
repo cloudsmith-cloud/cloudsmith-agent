@@ -1,33 +1,120 @@
 name: CI
+
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
+
 permissions:
-  contents: read
-  packages: write
-  security-events: write
+  contents: write
+  packages: read
+
 jobs:
   dco:
     if: github.event_name == 'pull_request'
     uses: cloudsmith-cloud/cloudsmith-workflows/.github/workflows/dco-check.yml@v1.0.0
+
   build-test:
-    uses: cloudsmith-cloud/cloudsmith-workflows/.github/workflows/dotnet-build-test.yml@v1.0.0
-    with:
-      run-integration-tests: true
-    secrets: inherit
-  docker:
-    if: github.ref == 'refs/heads/main'
+    name: Build and test (Windows)
+    # Windows runner required: net9.0-windows TFM + win-x64 RID
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Authenticate to GitHub Packages (NuGet)
+        env:
+          NUGET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          dotnet nuget update source cloudsmith-github `
+            --username x-access-token `
+            --password "$env:NUGET_TOKEN" `
+            --store-password-in-clear-text `
+            --configfile nuget.config
+
+      - name: Restore
+        run: dotnet restore CloudSmith.Runner.sln
+
+      - name: Build
+        run: dotnet build CloudSmith.Runner.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test CloudSmith.Runner.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+  publish-release:
+    name: Publish release zip
     needs: [build-test]
-    uses: cloudsmith-cloud/cloudsmith-workflows/.github/workflows/docker-build-push.yml@v1.0.0
-    with:
-      image-name: 'cloudsmith-runners'
-    secrets: inherit
-  trivy:
-    if: github.ref == 'refs/heads/main'
-    needs: [docker]
-    uses: cloudsmith-cloud/cloudsmith-workflows/.github/workflows/trivy-scan.yml@v1.0.0
-    with:
-      image-ref: 'ghcr.io/cloudsmith-cloud/cloudsmith-runners:latest'
-    secrets: inherit
+    # Only run on push to main or on version tags
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Authenticate to GitHub Packages (NuGet)
+        env:
+          NUGET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          dotnet nuget update source cloudsmith-github `
+            --username x-access-token `
+            --password "$env:NUGET_TOKEN" `
+            --store-password-in-clear-text `
+            --configfile nuget.config
+
+      - name: Publish self-contained (win-x64)
+        run: >
+          dotnet publish src/CloudSmith.Runner/CloudSmith.Runner.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output publish/win-x64
+          -p:PublishSingleFile=true
+          -p:PublishReadyToRun=true
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -like "refs/tags/v*") {
+            $ver = "${{ github.ref }}" -replace "refs/tags/", ""
+          } else {
+            $sha = "${{ github.sha }}".Substring(0, 7)
+            $ver = "sha-$sha"
+          }
+          echo "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Create zip
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $zipName = "cloudsmith-agent-win-x64-$version.zip"
+          Compress-Archive -Path "publish/win-x64/*" -DestinationPath $zipName
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudsmith-agent-win-x64
+          path: ${{ env.ZIP_NAME }}
+          retention-days: 30
+
+      - name: Create GitHub Release (on version tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true

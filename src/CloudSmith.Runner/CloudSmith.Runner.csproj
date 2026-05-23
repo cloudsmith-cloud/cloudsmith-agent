@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>CloudSmith.Runner</RootNamespace>
@@ -16,20 +18,25 @@
     -->
     <PackageId>CloudSmith.Agent</PackageId>
     <Title>CloudSmith Agent</Title>
-    <Description>CloudSmith Agent — per-host Windows Service (mTLS enrollment, job dispatch, WinRM/Redfish payload execution). Part of the CloudSmith open-source cloud platform management solution.</Description>
+    <Description>CloudSmith Agent — per-host Windows Service. Enrolls with the Relay LAN listener, scans local Hyper-V inventory, and pushes results to PaaS via Relay. Part of the CloudSmith open-source cloud platform management solution.</Description>
     <Authors>CloudSmith Contributors</Authors>
     <Company>CloudSmith</Company>
     <Product>CloudSmith Agent</Product>
     <AssemblyTitle>CloudSmith Agent</AssemblyTitle>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CloudSmith.Sdk" Version="0.1.0" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.0" />
-    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.5" />
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.4.6" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="9.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CloudSmith.Runner.Tests" />
   </ItemGroup>
 
 </Project>
