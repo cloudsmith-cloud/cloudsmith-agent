@@ -1,14 +1,3 @@
 // Copyright 2026 CloudSmith Contributors
 // SPDX-License-Identifier: Apache-2.0
-// TODO(AB#1664-followup): rename type to Agent
-
-namespace CloudSmith.Runner;
-
-public sealed class RunnerOptions
-{
-    public string ApiBaseUrl { get; set; } = "https://localhost:443";
-    public string RunnerName { get; set; } = Environment.MachineName;
-    public string CertThumbprint { get; set; } = string.Empty;
-    public int HeartbeatIntervalSeconds { get; set; } = 30;
-    public string[] Capabilities { get; set; } = ["invoke-deployment", "collect-inventory", "collect-hardware"];
-}
+// Stub — RunnerOptions replaced by AgentOptions (AgentOptions.cs) in AB#1665.
