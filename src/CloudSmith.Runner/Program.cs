@@ -37,11 +37,21 @@ var agentOptions = new AgentOptions
 // Logging — Serilog -> stdout (Windows Service captures stdout via EventLog
 // when sc.exe is configured with the appropriate log provider).
 // ---------------------------------------------------------------------------
+var logDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+    "CloudSmith", "logs");
+Directory.CreateDirectory(logDir);
+
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .Enrich.FromLogContext()
     .Enrich.WithProperty("service", "cloudsmith-agent")
     .WriteTo.Console()
+    .WriteTo.File(
+        path: Path.Combine(logDir, "agent-.log"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 7,
+        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
 try

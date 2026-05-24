@@ -1,26 +1,31 @@
 // Copyright 2026 CloudSmith Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Management.Automation;
-using System.Management.Automation.Runspaces;
+using System.Management;
 using Microsoft.Extensions.Logging;
 
 namespace CloudSmith.Runner.Inventory;
 
 /// <summary>
-/// Scans the local Hyper-V host using a LOCAL PowerShell runspace.
+/// Scans the local Hyper-V host via WMI (root\virtualization\v2).
 ///
-/// Does NOT use WinRM / PSRemote — the Agent runs ON the Hyper-V host and
-/// invokes Hyper-V cmdlets in-process. This is the primary data plane per
-/// ADR-007 (Agent path). PSRemote is the Relay-side fallback for hosts that
-/// have not yet installed the Agent.
+/// Does NOT use the PowerShell SDK or WinRM. The Agent runs ON the Hyper-V host
+/// as LocalSystem and reads the Hyper-V WMI v2 namespace in-process via
+/// System.Management. This is the only path that works reliably in Windows service
+/// session 0 — the PowerShell SDK path deadlocks on the WinPS compatibility shim
+/// that Get-VM triggers under LocalSystem.
 ///
-/// Requires the Agent process to run as LocalSystem (default) or a user with
-/// Hyper-V Administrator rights. The <c>Microsoft.PowerShell.SDK</c> NuGet
-/// package bundles the PowerShell runtime so no external PS installation is needed.
+/// Field mapping vs. Get-VM:
+///   Msvm_ComputerSystem.ElementName           -> Name
+///   Msvm_ComputerSystem.Name (GUID string)    -> VmId
+///   Msvm_ComputerSystem.EnabledState (ushort) -> State
+///   Msvm_ProcessorSettingData.VirtualQuantity -> CpuCount
+///   Msvm_MemorySettingData.VirtualQuantity    -> MemoryBytes (value is MB; multiplied by 1024^2)
 /// </summary>
 public sealed class HyperVScanner
 {
+    private const string HyperVNamespace = @"root\virtualization\v2";
+
     private readonly ILogger<HyperVScanner> _logger;
 
     public HyperVScanner(ILogger<HyperVScanner> logger)
@@ -28,87 +33,136 @@ public sealed class HyperVScanner
         _logger = logger;
     }
 
-    /// <summary>
-    /// Run <c>Get-VM</c> on the local host and return a <see cref="VmSnapshot"/>
-    /// for every discovered virtual machine.
-    /// </summary>
     public Task<IReadOnlyList<VmSnapshot>> ScanAsync(CancellationToken ct)
     {
-        return Task.Run<IReadOnlyList<VmSnapshot>>(() => ScanLocal(), ct);
+        return Task.Run<IReadOnlyList<VmSnapshot>>(() => ScanLocal(ct), ct);
     }
 
-    private IReadOnlyList<VmSnapshot> ScanLocal()
+    private IReadOnlyList<VmSnapshot> ScanLocal(CancellationToken ct)
     {
-        _logger.LogInformation("HyperVScanner: running local Get-VM");
+        _logger.LogInformation("HyperVScanner: querying {Ns} via WMI", HyperVNamespace);
 
-        // Open a local runspace — no WSMan, no network hop.
-        using var runspace = RunspaceFactory.CreateRunspace();
-        runspace.Open();
+        var scope = new ManagementScope(HyperVNamespace);
+        scope.Connect();
 
-        using var ps = PowerShell.Create();
-        ps.Runspace = runspace;
+        // Caption='Virtual Machine' excludes the host itself (Caption='Hosting Computer System').
+        var vmQuery = new ObjectQuery(
+            "SELECT Name, ElementName, EnabledState FROM Msvm_ComputerSystem WHERE Caption='Virtual Machine'");
 
-        ps.AddCommand("Get-VM");
-        var results = ps.Invoke();
-
-        if (ps.HadErrors)
-        {
-            foreach (var err in ps.Streams.Error)
-                _logger.LogWarning("Get-VM error: {Err}", err?.ToString());
-        }
-
-        var snapshots = new List<VmSnapshot>(results.Count);
-        var now = DateTimeOffset.UtcNow;
+        var snapshots = new List<VmSnapshot>();
+        var now    = DateTimeOffset.UtcNow;
         var hostId = Environment.MachineName;
 
-        foreach (var vm in results)
+        using var searcher = new ManagementObjectSearcher(scope, vmQuery);
+        using var vms = searcher.Get();
+
+        foreach (ManagementObject vm in vms)
         {
-            if (vm?.BaseObject is null) continue;
+            ct.ThrowIfCancellationRequested();
 
-            var name     = GetString(vm, "Name")   ?? GetString(vm, "VMName") ?? "unknown";
-            var vmGuid   = GetString(vm, "VMId")   ?? GetString(vm, "Id")     ?? Guid.NewGuid().ToString();
-            var state    = GetString(vm, "State")  ?? "Unknown";
-            var cpuCount = GetInt(vm, "ProcessorCount") ?? 0;
-            var memBytes = GetLong(vm, "MemoryAssigned") ?? GetLong(vm, "MemoryStartup") ?? 0L;
+            using (vm)
+            {
+                var name  = vm["ElementName"] as string ?? "unknown";
+                var vmId  = vm["Name"]        as string ?? Guid.NewGuid().ToString();
+                var state = MapEnabledState(ToUInt16(vm["EnabledState"]));
 
-            snapshots.Add(new VmSnapshot(
-                VmId:          vmGuid,
-                Name:          name,
-                HostId:        hostId,
-                State:         state,
-                CpuCount:      cpuCount,
-                MemoryBytes:   memBytes,
-                ObservedAtUtc: now));
+                var (cpuCount, memoryBytes) = ReadVmSettings(vm, ct);
+
+                snapshots.Add(new VmSnapshot(
+                    VmId:          vmId,
+                    Name:          name,
+                    HostId:        hostId,
+                    State:         state,
+                    CpuCount:      cpuCount,
+                    MemoryBytes:   memoryBytes,
+                    ObservedAtUtc: now));
+            }
         }
 
-        _logger.LogInformation("HyperVScanner: found {Count} VM(s) on {Host}", snapshots.Count, hostId);
+        _logger.LogInformation(
+            "HyperVScanner: found {Count} VM(s) on {Host}", snapshots.Count, hostId);
         return snapshots;
     }
 
-    private static string? GetString(PSObject obj, string name)
-        => obj.Properties[name]?.Value?.ToString();
-
-    private static int? GetInt(PSObject obj, string name)
+    private (int cpuCount, long memoryBytes) ReadVmSettings(
+        ManagementObject vm, CancellationToken ct)
     {
-        var v = obj.Properties[name]?.Value;
-        return v switch
+        int  cpuCount    = 0;
+        long memoryBytes = 0;
+
+        using var settingsCollection = vm.GetRelated(
+            "Msvm_VirtualSystemSettingData",
+            "Msvm_SettingsDefineState",
+            null, null, null, null, false, null);
+
+        foreach (ManagementObject settings in settingsCollection)
         {
-            null   => null,
-            int i  => i,
-            long l => (int)l,
-            _      => int.TryParse(v.ToString(), out var r) ? r : null,
-        };
+            ct.ThrowIfCancellationRequested();
+
+            using (settings)
+            {
+                using var components = settings.GetRelated(
+                    null,
+                    "Msvm_VirtualSystemSettingDataComponent",
+                    null, null, null, null, false, null);
+
+                foreach (ManagementObject comp in components)
+                {
+                    using (comp)
+                    {
+                        var cls = comp.ClassPath?.ClassName;
+                        if (cls == "Msvm_ProcessorSettingData")
+                        {
+                            var v = ToUInt64(comp["VirtualQuantity"]);
+                            if (v > 0) cpuCount = (int)v;
+                        }
+                        else if (cls == "Msvm_MemorySettingData")
+                        {
+                            // VirtualQuantity is MB per DMTF convention.
+                            var mb = ToUInt64(comp["VirtualQuantity"]);
+                            if (mb > 0) memoryBytes = (long)mb * 1024L * 1024L;
+                        }
+                    }
+                }
+            }
+        }
+
+        return (cpuCount, memoryBytes);
     }
 
-    private static long? GetLong(PSObject obj, string name)
+    private static string MapEnabledState(ushort state) => state switch
     {
-        var v = obj.Properties[name]?.Value;
-        return v switch
-        {
-            null   => null,
-            long l => l,
-            int i  => (long)i,
-            _      => long.TryParse(v.ToString(), out var r) ? r : null,
-        };
-    }
+        2     => "Running",
+        3     => "Off",
+        6     => "Saved",
+        9     => "Paused",
+        10    => "Starting",
+        32773 => "Saving",
+        32776 => "Pausing",
+        32777 => "Resuming",
+        32778 => "FastSaved",
+        32779 => "FastSaving",
+        _     => $"Unknown({state})",
+    };
+
+    private static ushort ToUInt16(object? v) => v switch
+    {
+        null     => 0,
+        ushort u => u,
+        short s  => (ushort)s,
+        int i    => (ushort)i,
+        uint ui  => (ushort)ui,
+        _        => ushort.TryParse(v.ToString(), out var r) ? r : (ushort)0,
+    };
+
+    private static ulong ToUInt64(object? v) => v switch
+    {
+        null     => 0UL,
+        ulong u  => u,
+        long l   => (ulong)l,
+        uint ui  => ui,
+        int i    => (ulong)i,
+        ushort s => s,
+        _        => ulong.TryParse(v.ToString(), out var r) ? r : 0UL,
+    };
 }
