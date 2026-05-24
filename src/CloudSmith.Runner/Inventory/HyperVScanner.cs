@@ -66,7 +66,7 @@ public sealed class HyperVScanner
                 var vmId  = vm["Name"]        as string ?? Guid.NewGuid().ToString();
                 var state = MapEnabledState(ToUInt16(vm["EnabledState"]));
 
-                var (cpuCount, memoryBytes) = ReadVmSettings(vm, ct);
+                var (cpuCount, memoryBytes) = ReadVmSettingsDirect(scope, vmId, ct);
 
                 snapshots.Add(new VmSnapshot(
                     VmId:          vmId,
@@ -84,48 +84,46 @@ public sealed class HyperVScanner
         return snapshots;
     }
 
-    private (int cpuCount, long memoryBytes) ReadVmSettings(
-        ManagementObject vm, CancellationToken ct)
+    // Query CPU and memory directly via WQL on the scope — avoids ManagementObject.GetRelated
+    // which throws InvalidOperationException on objects returned from an enumerator.
+    // InstanceID pattern: "Microsoft:{vmGuid}%" matches the active-settings objects.
+    private static (int cpuCount, long memoryBytes) ReadVmSettingsDirect(
+        ManagementScope scope, string vmId, CancellationToken ct)
     {
         int  cpuCount    = 0;
         long memoryBytes = 0;
 
-        using var settingsCollection = vm.GetRelated(
-            "Msvm_VirtualSystemSettingData",
-            "Msvm_SettingsDefineState",
-            null, null, null, null, false, null);
-
-        foreach (ManagementObject settings in settingsCollection)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-
-            using (settings)
+            using var procSearcher = new ManagementObjectSearcher(scope,
+                new ObjectQuery($"SELECT VirtualQuantity FROM Msvm_ProcessorSettingData WHERE InstanceID LIKE 'Microsoft:{vmId}%'"));
+            using var procResults = procSearcher.Get();
+            foreach (ManagementObject obj in procResults)
             {
-                using var components = settings.GetRelated(
-                    null,
-                    "Msvm_VirtualSystemSettingDataComponent",
-                    null, null, null, null, false, null);
-
-                foreach (ManagementObject comp in components)
+                using (obj)
                 {
-                    using (comp)
-                    {
-                        var cls = comp.ClassPath?.ClassName;
-                        if (cls == "Msvm_ProcessorSettingData")
-                        {
-                            var v = ToUInt64(comp["VirtualQuantity"]);
-                            if (v > 0) cpuCount = (int)v;
-                        }
-                        else if (cls == "Msvm_MemorySettingData")
-                        {
-                            // VirtualQuantity is MB per DMTF convention.
-                            var mb = ToUInt64(comp["VirtualQuantity"]);
-                            if (mb > 0) memoryBytes = (long)mb * 1024L * 1024L;
-                        }
-                    }
+                    var v = ToUInt64(obj["VirtualQuantity"]);
+                    if (v > 0) { cpuCount = (int)v; break; }
                 }
             }
         }
+        catch { /* non-fatal — cpu_count is nullable */ }
+
+        try
+        {
+            using var memSearcher = new ManagementObjectSearcher(scope,
+                new ObjectQuery($"SELECT VirtualQuantity FROM Msvm_MemorySettingData WHERE InstanceID LIKE 'Microsoft:{vmId}%'"));
+            using var memResults = memSearcher.Get();
+            foreach (ManagementObject obj in memResults)
+            {
+                using (obj)
+                {
+                    var mb = ToUInt64(obj["VirtualQuantity"]);
+                    if (mb > 0) { memoryBytes = (long)mb * 1024L * 1024L; break; }
+                }
+            }
+        }
+        catch { /* non-fatal — memory_mb is nullable */ }
 
         return (cpuCount, memoryBytes);
     }
