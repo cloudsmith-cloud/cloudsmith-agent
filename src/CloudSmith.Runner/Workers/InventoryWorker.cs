@@ -22,19 +22,22 @@ public sealed class InventoryWorker : BackgroundService
 {
     private readonly AgentOptions _opts;
     private readonly HyperVScanner _scanner;
+    private readonly HardwareScanner _hardwareScanner;
     private readonly RelayPusher _pusher;
     private readonly ILogger<InventoryWorker> _logger;
 
     public InventoryWorker(
         IOptions<AgentOptions> opts,
         HyperVScanner scanner,
+        HardwareScanner hardwareScanner,
         RelayPusher pusher,
         ILogger<InventoryWorker> logger)
     {
-        _opts    = opts.Value;
-        _scanner = scanner;
-        _pusher  = pusher;
-        _logger  = logger;
+        _opts            = opts.Value;
+        _scanner         = scanner;
+        _hardwareScanner = hardwareScanner;
+        _pusher          = pusher;
+        _logger          = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -70,10 +73,11 @@ public sealed class InventoryWorker : BackgroundService
             var vms = await _scanner.ScanAsync(ct).ConfigureAwait(false);
             _logger.LogInformation("Inventory scan complete: {Count} VM(s)", vms.Count);
 
-            await _pusher.PushInventoryAsync(
-                _opts.ClusterId,
-                vms,
-                ct).ConfigureAwait(false);
+            await _pusher.PushInventoryAsync(_opts.ClusterId, vms, ct).ConfigureAwait(false);
+
+            // Hardware scan — runs on same interval, pushed separately.
+            var hardware = await _hardwareScanner.ScanAsync(ct).ConfigureAwait(false);
+            await _pusher.PushHardwareAsync(hardware, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

@@ -4,6 +4,7 @@
 using CloudSmith.Runner;
 using CloudSmith.Runner.Enrollment;
 using CloudSmith.Runner.Inventory;
+using CloudSmith.Runner.Jobs;
 using CloudSmith.Runner.Pushers;
 using CloudSmith.Runner.Workers;
 using Microsoft.Extensions.DependencyInjection;
@@ -91,15 +92,20 @@ try
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<ILogger<RelayPusher>>()));
 
-    // Local Hyper-V scanner — no WinRM, runs in-process.
+    // Local Hyper-V and hardware scanners — no WinRM, run in-process.
     builder.Services.AddSingleton<HyperVScanner>();
+    builder.Services.AddSingleton<HardwareScanner>();
 
-    // Enrollment hosted service runs first and sets identity on RelayPusher.
+    // Job worker — singleton so EnrollmentHostedService can call SetIdentity on it.
+    builder.Services.AddSingleton<JobWorker>();
+
+    // Enrollment hosted service runs first and sets identity on RelayPusher + JobWorker.
     builder.Services.AddHostedService<EnrollmentHostedService>();
 
-    // Heartbeat and inventory workers.
+    // Heartbeat, inventory, and job workers.
     builder.Services.AddHostedService<HeartbeatWorker>();
     builder.Services.AddHostedService<InventoryWorker>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<JobWorker>());
 
     var host = builder.Build();
     await host.RunAsync().ConfigureAwait(false);

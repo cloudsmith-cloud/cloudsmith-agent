@@ -24,15 +24,18 @@ public sealed class EnrollmentHostedService : IHostedService
 {
     private readonly EnrollmentClient _enrollmentClient;
     private readonly RelayPusher _pusher;
+    private readonly JobWorker _jobWorker;
     private readonly ILogger<EnrollmentHostedService> _logger;
 
     public EnrollmentHostedService(
         EnrollmentClient enrollmentClient,
         RelayPusher pusher,
+        JobWorker jobWorker,
         ILogger<EnrollmentHostedService> logger)
     {
         _enrollmentClient = enrollmentClient;
         _pusher           = pusher;
+        _jobWorker        = jobWorker;
         _logger           = logger;
     }
 
@@ -53,6 +56,7 @@ public sealed class EnrollmentHostedService : IHostedService
                     .ConfigureAwait(false);
 
                 _pusher.SetIdentity(identity);
+                _jobWorker.SetIdentity(identity);
                 _logger.LogInformation(
                     "Enrollment complete: agentId={AgentId}", identity.AgentId);
                 return;
@@ -76,6 +80,7 @@ public sealed class EnrollmentHostedService : IHostedService
             .EnsureEnrolledAsync(cancellationToken)
             .ConfigureAwait(false);
         _pusher.SetIdentity(id);
+        _jobWorker.SetIdentity(id);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

@@ -143,6 +143,28 @@ public sealed class RelayPusher
     // Wire payloads (mirrors Relay LAN controller's request shapes)
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// POST hardware snapshot to <c>{relayUrl}/lan/v1/agents/{agentId}/hardware</c>.
+    /// </summary>
+    public async Task PushHardwareAsync(HostHardwareSnapshot hardware, CancellationToken ct)
+    {
+        EnsureIdentity();
+        var url = $"{_identity!.RelayUrl}/lan/v1/agents/{_identity.AgentId}/hardware";
+        using var req = BuildRequest(HttpMethod.Post, url, hardware);
+        try
+        {
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+                _logger.LogWarning("Hardware push HTTP {Status}", (int)resp.StatusCode);
+            else
+                _logger.LogInformation("Hardware pushed: host={Host}", hardware.HostId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Hardware push failed — Relay unreachable?");
+        }
+    }
+
     private sealed record InventoryPayload(
         [property: JsonPropertyName("clusterId")] string ClusterId,
         [property: JsonPropertyName("vms")] IReadOnlyList<VmSnapshot> Vms);
