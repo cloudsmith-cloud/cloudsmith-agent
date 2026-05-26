@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using CloudSmith.Runner;
+using CloudSmith.Runner.Bmc;
 using CloudSmith.Runner.Enrollment;
 using CloudSmith.Runner.Inventory;
 using CloudSmith.Runner.Jobs;
 using CloudSmith.Runner.Pushers;
 using CloudSmith.Runner.Workers;
+using CloudSmith.Sdk.Secrets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -131,6 +133,53 @@ try
         new RelayPusher(
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<ILogger<RelayPusher>>()));
+
+    // Secrets provider — reads from AGENT_SECRET_* environment variables.
+    // AB#1462 — per-request credential retrieval for BMC Redfish client.
+    builder.Services.AddSingleton<ICloudSmithSecretsProvider, LocalSecretsProvider>();
+
+    // BMC HTTP client — separate from the relay HttpClient.
+    // BMC endpoints may use self-signed certificates; configure via AGENT_BMC_CERT_PATH
+    // to load a trust anchor rather than disabling certificate validation globally.
+    builder.Services.AddSingleton<IBmcClient>(sp =>
+    {
+        var certPath = Environment.GetEnvironmentVariable("AGENT_BMC_CERT_PATH");
+        HttpClientHandler bmcHandler;
+
+        if (!string.IsNullOrWhiteSpace(certPath) && File.Exists(certPath))
+        {
+            // Load the BMC CA certificate and add it to a custom trust store.
+            var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath);
+            bmcHandler = new HttpClientHandler();
+            bmcHandler.ServerCertificateCustomValidationCallback = (_, serverCert, chain, errors) =>
+            {
+                if (errors == System.Net.Security.SslPolicyErrors.None) return true;
+                // Accept if the server cert is issued by the configured BMC CA.
+                chain!.ChainPolicy.ExtraStore.Add(cert);
+                chain.ChainPolicy.VerificationFlags = System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
+                return chain.Build(new System.Security.Cryptography.X509Certificates.X509Certificate2(serverCert!));
+            };
+            Log.Information("BMC: loaded CA cert from {Path} for self-signed BMC trust", certPath);
+        }
+        else
+        {
+            bmcHandler = new HttpClientHandler
+            {
+                SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                             | System.Security.Authentication.SslProtocols.Tls13,
+            };
+        }
+
+        var bmcHttp = new HttpClient(bmcHandler, disposeHandler: true)
+        {
+            Timeout = TimeSpan.FromSeconds(30),
+        };
+
+        return new RedfishBmcClient(
+            sp.GetRequiredService<ICloudSmithSecretsProvider>(),
+            bmcHttp,
+            sp.GetRequiredService<ILogger<RedfishBmcClient>>());
+    });
 
     // Local Hyper-V and hardware scanners — no WinRM, run in-process.
     builder.Services.AddSingleton<HyperVScanner>();
