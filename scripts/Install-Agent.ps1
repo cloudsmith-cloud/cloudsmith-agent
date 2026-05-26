@@ -61,7 +61,7 @@ $DataDir     = 'C:\ProgramData\CloudSmith'
 # 1. Determine download URL
 # ---------------------------------------------------------------------------
 Write-Host "CloudSmith Agent installer — version: $ReleaseVersion"
-$repo = 'cloudsmith-cloud/cloudsmith-runners'
+$repo = 'cloudsmith-cloud/cloudsmith-agent'
 
 if ($ReleaseVersion -eq 'latest') {
     $apiUrl = "https://api.github.com/repos/$repo/releases/latest"

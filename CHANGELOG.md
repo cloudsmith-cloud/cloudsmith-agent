@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **cloudsmith-runners** will be documented in this file.
+All notable changes to **cloudsmith-agent** will be documented in this file.
 
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
