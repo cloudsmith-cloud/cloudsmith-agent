@@ -93,7 +93,7 @@ public sealed class JobWorker : BackgroundService
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return Array.Empty<JobDispatch>();
             var jobs = await resp.Content.ReadFromJsonAsync<List<JobDispatch>>(JsonOpts, ct).ConfigureAwait(false);
-            return jobs ?? Array.Empty<JobDispatch>();
+            return jobs ?? new List<JobDispatch>();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
