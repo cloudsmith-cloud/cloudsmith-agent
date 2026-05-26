@@ -70,8 +70,12 @@ public sealed class RedfishBmcClient : IBmcClient
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException("CS-BMC-ERR-001: Empty response from Redfish /Systems");
 
-        var memberUrl = list.Members?.FirstOrDefault()?["@odata.id"]?.GetString()
-            ?? throw new InvalidOperationException("CS-BMC-ERR-002: No System members in Redfish /Systems");
+        var firstMember = list.Members?.FirstOrDefault();
+        var memberUrl = firstMember is not null && firstMember.TryGetValue("@odata.id", out var memberEl)
+            ? memberEl.GetString()
+            : null;
+        if (string.IsNullOrEmpty(memberUrl))
+            throw new InvalidOperationException("CS-BMC-ERR-002: No System members in Redfish /Systems");
 
         var systemUrl = $"{bmcEndpoint.TrimEnd('/')}{memberUrl}";
         using var sysResp = await SendAsync(systemUrl, cred, ct).ConfigureAwait(false);
@@ -217,7 +221,11 @@ public sealed class RedfishBmcClient : IBmcClient
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException("CS-BMC-ERR-006: Empty response from Redfish /Chassis");
 
-        return list.Members?.FirstOrDefault()?["@odata.id"]?.GetString()
+        var firstChassis = list.Members?.FirstOrDefault();
+        var chassisPath = firstChassis is not null && firstChassis.TryGetValue("@odata.id", out var chassisEl)
+            ? chassisEl.GetString()
+            : null;
+        return chassisPath
             ?? throw new InvalidOperationException("CS-BMC-ERR-007: No Chassis members in Redfish /Chassis");
     }
 
