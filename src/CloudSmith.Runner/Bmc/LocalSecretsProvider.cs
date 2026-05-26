@@ -43,7 +43,9 @@ public sealed class LocalSecretsProvider : ICloudSmithSecretsProvider
         }
 
         _logger.LogDebug("CS-BMC-DBG-002: Resolved secret '{Name}' from env var {Key}", secretName, envKey);
-        return Task.FromResult(value);
+        // value is non-null here: IsNullOrEmpty check above throws if null/empty.
+        // Null-forgiving required because IsNullOrEmpty lacks [NotNullWhen] annotation.
+        return Task.FromResult(value!);
     }
 
     /// <inheritdoc/>

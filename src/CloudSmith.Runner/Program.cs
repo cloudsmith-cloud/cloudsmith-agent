@@ -139,38 +139,47 @@ try
     builder.Services.AddSingleton<ICloudSmithSecretsProvider, LocalSecretsProvider>();
 
     // BMC HTTP client — separate from the relay HttpClient.
-    // BMC endpoints may use self-signed certificates; configure via AGENT_BMC_CERT_PATH
-    // to load a trust anchor rather than disabling certificate validation globally.
+    // Uses SocketsHttpHandler for TLS 1.2/1.3 enforcement.
+    // For BMC endpoints with self-signed certificates, set AGENT_BMC_CERT_PATH to the
+    // path of the CA certificate PEM file. The certificate is loaded and used as an
+    // additional trust anchor — global certificate validation is never disabled.
     builder.Services.AddSingleton<IBmcClient>(sp =>
     {
         var certPath = Environment.GetEnvironmentVariable("AGENT_BMC_CERT_PATH");
-        HttpClientHandler bmcHandler;
+
+        // Build a SocketsHttpHandler for modern TLS control.
+        var socketsHandler = new System.Net.Http.SocketsHttpHandler
+        {
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                                    | System.Security.Authentication.SslProtocols.Tls13,
+            },
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        };
 
         if (!string.IsNullOrWhiteSpace(certPath) && File.Exists(certPath))
         {
-            // Load the BMC CA certificate and add it to a custom trust store.
-            var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath);
-            bmcHandler = new HttpClientHandler();
-            bmcHandler.ServerCertificateCustomValidationCallback = (_, serverCert, chain, errors) =>
-            {
-                if (errors == System.Net.Security.SslPolicyErrors.None) return true;
-                // Accept if the server cert is issued by the configured BMC CA.
-                chain!.ChainPolicy.ExtraStore.Add(cert);
-                chain.ChainPolicy.VerificationFlags = System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
-                return chain.Build(serverCert!);
-            };
+            // Load the BMC CA certificate via X509CertificateLoader (non-deprecated API).
+            var caCert = System.Security.Cryptography.X509Certificates.X509CertificateLoader
+                .LoadCertificateFromFile(certPath);
+            socketsHandler.SslOptions.RemoteCertificateValidationCallback =
+                (sender, serverCert, chain, errors) =>
+                {
+                    if (errors == System.Net.Security.SslPolicyErrors.None) return true;
+                    if (chain is null || serverCert is null) return false;
+                    chain.ChainPolicy.ExtraStore.Add(caCert);
+                    chain.ChainPolicy.VerificationFlags =
+                        System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
+                    // serverCert from TLS callbacks is always X509Certificate2 at runtime.
+                    if (serverCert is not System.Security.Cryptography.X509Certificates.X509Certificate2 leafCert)
+                        return false;
+                    return chain.Build(leafCert);
+                };
             Log.Information("BMC: loaded CA cert from {Path} for self-signed BMC trust", certPath);
         }
-        else
-        {
-            bmcHandler = new HttpClientHandler
-            {
-                SslProtocols = System.Security.Authentication.SslProtocols.Tls12
-                             | System.Security.Authentication.SslProtocols.Tls13,
-            };
-        }
 
-        var bmcHttp = new HttpClient(bmcHandler, disposeHandler: true)
+        var bmcHttp = new HttpClient(socketsHandler, disposeHandler: true)
         {
             Timeout = TimeSpan.FromSeconds(30),
         };
