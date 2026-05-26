@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CloudSmith.Runner.Enrollment;
 using CloudSmith.Runner.Inventory;
+using CloudSmith.Runner.Workers;
 using Microsoft.Extensions.Logging;
 
 namespace CloudSmith.Runner.Pushers;
@@ -26,6 +27,9 @@ public sealed class RelayPusher
     private readonly HttpClient _http;
     private readonly ILogger<RelayPusher> _logger;
 
+    // Watchdog — notified after each successful heartbeat so it resets its timer.
+    private WatchdogWorker? _watchdog;
+
     // Set after enrollment (call SetIdentity before pushing).
     private AgentIdentity? _identity;
 
@@ -34,6 +38,9 @@ public sealed class RelayPusher
         _http   = http;
         _logger = logger;
     }
+
+    /// <summary>Wire the watchdog so RelayPusher can notify it on heartbeat success.</summary>
+    public void SetWatchdog(WatchdogWorker watchdog) => _watchdog = watchdog;
 
     /// <summary>
     /// Bind the enrolled identity so subsequent calls know the relay URL and secret.
@@ -57,7 +64,10 @@ public sealed class RelayPusher
             if (!resp.IsSuccessStatusCode)
                 _logger.LogWarning("Heartbeat HTTP {Status}", (int)resp.StatusCode);
             else
+            {
                 _logger.LogDebug("Heartbeat ack from Relay");
+                _watchdog?.RecordHeartbeat();
+            }
         }
         catch (HttpRequestException ex)
         {

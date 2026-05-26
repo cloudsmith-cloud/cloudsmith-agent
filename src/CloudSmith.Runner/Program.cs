@@ -99,13 +99,17 @@ try
     // Job worker — singleton so EnrollmentHostedService can call SetIdentity on it.
     builder.Services.AddSingleton<JobWorker>();
 
+    // Watchdog — singleton so RelayPusher can notify it via SetWatchdog (AB#1455).
+    builder.Services.AddSingleton<WatchdogWorker>();
+
     // Enrollment hosted service runs first and sets identity on RelayPusher + JobWorker.
     builder.Services.AddHostedService<EnrollmentHostedService>();
 
-    // Heartbeat, inventory, and job workers.
+    // Heartbeat, inventory, job, and watchdog workers.
     builder.Services.AddHostedService<HeartbeatWorker>();
     builder.Services.AddHostedService<InventoryWorker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<JobWorker>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchdogWorker>());
 
     var host = builder.Build();
     await host.RunAsync().ConfigureAwait(false);

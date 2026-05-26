@@ -25,23 +25,29 @@ public sealed class EnrollmentHostedService : IHostedService
     private readonly EnrollmentClient _enrollmentClient;
     private readonly RelayPusher _pusher;
     private readonly JobWorker _jobWorker;
+    private readonly WatchdogWorker _watchdog;
     private readonly ILogger<EnrollmentHostedService> _logger;
 
     public EnrollmentHostedService(
         EnrollmentClient enrollmentClient,
         RelayPusher pusher,
         JobWorker jobWorker,
+        WatchdogWorker watchdog,
         ILogger<EnrollmentHostedService> logger)
     {
         _enrollmentClient = enrollmentClient;
         _pusher           = pusher;
         _jobWorker        = jobWorker;
+        _watchdog         = watchdog;
         _logger           = logger;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("EnrollmentHostedService: ensuring Agent is enrolled");
+
+        // Wire watchdog into RelayPusher so it notifies the watchdog on heartbeat success.
+        _pusher.SetWatchdog(_watchdog);
 
         // Retry enrollment a few times at startup in case the Relay is briefly unavailable.
         const int MaxAttempts = 5;
@@ -81,6 +87,7 @@ public sealed class EnrollmentHostedService : IHostedService
             .ConfigureAwait(false);
         _pusher.SetIdentity(id);
         _jobWorker.SetIdentity(id);
+        _watchdog.RecordHeartbeat();
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
