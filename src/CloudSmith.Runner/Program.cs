@@ -72,9 +72,49 @@ try
     builder.Services.AddSingleton(Options.Create(agentOptions));
 
     // HTTP client shared by EnrollmentClient and RelayPusher.
-    builder.Services.AddSingleton(_ => new HttpClient
+    // mTLS configuration (AB#1457): enforce TLS 1.3; load client cert from cert store
+    // if AGENT_MTLS_CERT_THUMBPRINT is set (Phase V — optional in Phase IV MVP; enrollment
+    // uses X-Agent-Secret token auth when no client cert is configured).
+    builder.Services.AddSingleton(_ =>
     {
-        Timeout = TimeSpan.FromSeconds(30),
+        var thumbprint = Environment.GetEnvironmentVariable("AGENT_MTLS_CERT_THUMBPRINT");
+
+        var handler = new HttpClientHandler
+        {
+            // Enforce minimum TLS 1.2; prefer TLS 1.3 (OS negotiates highest mutually supported).
+            SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                         | System.Security.Authentication.SslProtocols.Tls13,
+            // Fail fast on cert errors — agents should not communicate over untrusted TLS.
+            ServerCertificateCustomValidationCallback = null,
+        };
+
+        // If a client cert thumbprint is configured, load from the machine cert store for mTLS.
+        if (!string.IsNullOrWhiteSpace(thumbprint))
+        {
+            using var store = new System.Security.Cryptography.X509Certificates.X509Store(
+                System.Security.Cryptography.X509Certificates.StoreName.My,
+                System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine);
+            store.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadOnly);
+            var certs = store.Certificates.Find(
+                System.Security.Cryptography.X509Certificates.X509FindType.FindByThumbprint,
+                thumbprint.Replace(":", "").Replace(" ", ""),
+                validOnly: true);
+            if (certs.Count > 0)
+            {
+                handler.ClientCertificates.Add(certs[0]);
+                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
+                Log.Information("mTLS: loaded client cert {Thumbprint}", thumbprint);
+            }
+            else
+            {
+                Log.Warning("mTLS: client cert {Thumbprint} not found in LocalMachine\\My — falling back to token auth", thumbprint);
+            }
+        }
+
+        return new HttpClient(handler, disposeHandler: true)
+        {
+            Timeout = TimeSpan.FromSeconds(30),
+        };
     });
 
     // Enrollment client — reads/writes identity from disk.
