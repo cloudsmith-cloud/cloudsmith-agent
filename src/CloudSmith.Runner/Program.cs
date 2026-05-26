@@ -157,7 +157,7 @@ try
                 // Accept if the server cert is issued by the configured BMC CA.
                 chain!.ChainPolicy.ExtraStore.Add(cert);
                 chain.ChainPolicy.VerificationFlags = System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
-                return chain.Build(new System.Security.Cryptography.X509Certificates.X509Certificate2(serverCert!));
+                return chain.Build(serverCert!);
             };
             Log.Information("BMC: loaded CA cert from {Path} for self-signed BMC trust", certPath);
         }
