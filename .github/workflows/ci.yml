@@ -97,6 +97,10 @@ jobs:
           }
           echo "version=$ver" >> $env:GITHUB_OUTPUT
 
+      - name: Bundle install script
+        shell: pwsh
+        run: Copy-Item Install-Agent.ps1 publish/win-x64/Install-Agent.ps1
+
       - name: Create zip
         shell: pwsh
         run: |
