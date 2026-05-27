@@ -17,7 +17,8 @@ namespace CloudSmith.Runner.Workers;
 /// so it completes enrollment synchronously (within StartAsync) before other services
 /// receive their StartAsync call.
 ///
-/// After enrollment the resulting identity is injected into <see cref="RelayPusher"/>
+/// After enrollment the resulting identity is injected into <see cref="RelayPusher"/>,
+/// <see cref="JobWorker"/>, and <see cref="PlatformUpdateWorker"/>
 /// so all subsequent HTTP calls carry the correct agentId + secret.
 /// </summary>
 public sealed class EnrollmentHostedService : IHostedService
@@ -25,6 +26,7 @@ public sealed class EnrollmentHostedService : IHostedService
     private readonly EnrollmentClient _enrollmentClient;
     private readonly RelayPusher _pusher;
     private readonly JobWorker _jobWorker;
+    private readonly PlatformUpdateWorker _updateWorker;
     private readonly WatchdogWorker _watchdog;
     private readonly ILogger<EnrollmentHostedService> _logger;
 
@@ -32,12 +34,14 @@ public sealed class EnrollmentHostedService : IHostedService
         EnrollmentClient enrollmentClient,
         RelayPusher pusher,
         JobWorker jobWorker,
+        PlatformUpdateWorker updateWorker,
         WatchdogWorker watchdog,
         ILogger<EnrollmentHostedService> logger)
     {
         _enrollmentClient = enrollmentClient;
         _pusher           = pusher;
         _jobWorker        = jobWorker;
+        _updateWorker     = updateWorker;
         _watchdog         = watchdog;
         _logger           = logger;
     }
@@ -63,6 +67,7 @@ public sealed class EnrollmentHostedService : IHostedService
 
                 _pusher.SetIdentity(identity);
                 _jobWorker.SetIdentity(identity);
+                _updateWorker.SetIdentity(identity);
                 _logger.LogInformation(
                     "Enrollment complete: agentId={AgentId}", identity.AgentId);
                 return;
@@ -87,6 +92,7 @@ public sealed class EnrollmentHostedService : IHostedService
             .ConfigureAwait(false);
         _pusher.SetIdentity(id);
         _jobWorker.SetIdentity(id);
+        _updateWorker.SetIdentity(id);
         _watchdog.RecordHeartbeat();
     }
 

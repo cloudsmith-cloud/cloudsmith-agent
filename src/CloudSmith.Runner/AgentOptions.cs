@@ -13,6 +13,7 @@ namespace CloudSmith.Runner;
 ///   AGENT_SCAN_INTERVAL_SECONDS  — default 300 (5 minutes)
 ///   AGENT_CLUSTER_ID             — cluster identifier reported in inventory (default "default")
 ///   AGENT_IDENTITY_PATH          — path to identity file (default C:\ProgramData\CloudSmith\agent-identity.json)
+///   AGENT_INSTALL_DIRECTORY      — CloudSmith install directory for docker compose (default C:\CloudSmith)
 /// </summary>
 public sealed class AgentOptions
 {
@@ -30,4 +31,10 @@ public sealed class AgentOptions
 
     /// <summary>Path to the persisted identity file — AGENT_IDENTITY_PATH.</summary>
     public string IdentityPath { get; set; } = Enrollment.EnrollmentClient.DefaultIdentityPath;
+
+    /// <summary>
+    /// Directory containing the CloudSmith docker-compose.yml — AGENT_INSTALL_DIRECTORY.
+    /// Default: C:\CloudSmith.
+    /// </summary>
+    public string InstallDirectory { get; set; } = @"C:\CloudSmith";
 }

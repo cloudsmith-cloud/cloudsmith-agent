@@ -27,6 +27,9 @@ var clusterId       = Environment.GetEnvironmentVariable("AGENT_CLUSTER_ID") ?? 
 var identityPath    = Environment.GetEnvironmentVariable("AGENT_IDENTITY_PATH")
     ?? EnrollmentClient.DefaultIdentityPath;
 
+var installDirectory = Environment.GetEnvironmentVariable("AGENT_INSTALL_DIRECTORY")
+    ?? @"C:\CloudSmith";
+
 var agentOptions = new AgentOptions
 {
     RelayUrl            = relayUrl,
@@ -34,6 +37,7 @@ var agentOptions = new AgentOptions
     ScanIntervalSeconds = scanInterval,
     ClusterId           = clusterId,
     IdentityPath        = identityPath,
+    InstallDirectory    = installDirectory,
 };
 
 // ---------------------------------------------------------------------------
@@ -197,16 +201,20 @@ try
     // Job worker — singleton so EnrollmentHostedService can call SetIdentity on it.
     builder.Services.AddSingleton<JobWorker>();
 
+    // Platform update worker — singleton so EnrollmentHostedService can call SetIdentity on it.
+    builder.Services.AddSingleton<PlatformUpdateWorker>();
+
     // Watchdog — singleton so RelayPusher can notify it via SetWatchdog (AB#1455).
     builder.Services.AddSingleton<WatchdogWorker>();
 
-    // Enrollment hosted service runs first and sets identity on RelayPusher + JobWorker.
+    // Enrollment hosted service runs first and sets identity on RelayPusher + JobWorker + PlatformUpdateWorker.
     builder.Services.AddHostedService<EnrollmentHostedService>();
 
-    // Heartbeat, inventory, job, and watchdog workers.
+    // Heartbeat, inventory, job, platform-update, and watchdog workers.
     builder.Services.AddHostedService<HeartbeatWorker>();
     builder.Services.AddHostedService<InventoryWorker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<JobWorker>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<PlatformUpdateWorker>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchdogWorker>());
 
     var host = builder.Build();
