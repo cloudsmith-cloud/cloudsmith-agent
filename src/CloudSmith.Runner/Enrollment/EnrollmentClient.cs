@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Net.Http.Json;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -126,7 +128,50 @@ public sealed class EnrollmentClient
 
         var json = JsonSerializer.Serialize(identity, JsonOpts);
         File.WriteAllText(_identityPath, json);
-        _logger.LogInformation("Agent identity persisted to {Path}", _identityPath);
+
+        // Harden the identity file so only SYSTEM and Administrators can read it.
+        // Any process running as a standard user or under a compromised service
+        // account is denied read access, preventing the agentSecret from being
+        // recovered via a local privilege-escalation path.
+        //
+        // This runs as LocalSystem (the service account), so SetAccessControl
+        // will succeed without elevation.
+        try
+        {
+            ApplyRestrictiveAcl(_identityPath);
+            _logger.LogInformation(
+                "Agent identity persisted and ACL hardened at {Path}", _identityPath);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: file is written; log the ACL failure so operators can
+            // investigate without losing the enrolled state.
+            _logger.LogWarning(ex,
+                "CS-ENROLL-WARN-001: Failed to harden ACL on {Path} — identity is written but " +
+                "may be readable by unprivileged processes. Re-run Install-Agent.ps1 to fix.",
+                _identityPath);
+        }
+    }
+
+    /// <summary>
+    /// Applies a SYSTEM+Administrators-only ACL to <paramref name="filePath"/>.
+    /// Inheritance is disabled and <c>BUILTIN\Users</c> is explicitly denied to
+    /// prevent low-privilege processes from reading the agentSecret.
+    /// </summary>
+    private static void ApplyRestrictiveAcl(string filePath)
+    {
+        var acl = new FileSecurity();
+        acl.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid,        null);
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        var users  = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid,        null);
+
+        acl.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl,    AccessControlType.Allow));
+        acl.AddAccessRule(new FileSystemAccessRule(admins, FileSystemRights.FullControl,    AccessControlType.Allow));
+        acl.AddAccessRule(new FileSystemAccessRule(users,  FileSystemRights.ReadAndExecute, AccessControlType.Deny));
+
+        new FileInfo(filePath).SetAccessControl(acl);
     }
 
     private static string[] GetLocalIpAddresses()
