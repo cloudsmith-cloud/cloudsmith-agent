@@ -49,16 +49,19 @@ var logDir = Path.Combine(
     "CloudSmith", "logs");
 Directory.CreateDirectory(logDir);
 
+// AB#2357 — standardised enricher set; same template as relay + api.
+const string LogTemplate = "[{Timestamp:HH:mm:ss} {Level:u3}] [{service}] {CorrelationId}{Message:lj}{NewLine}{Exception}";
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .Enrich.FromLogContext()
     .Enrich.WithProperty("service", "cloudsmith-agent")
-    .WriteTo.Console()
+    .Enrich.WithProperty("machine", Environment.MachineName)
+    .WriteTo.Console(outputTemplate: LogTemplate)
     .WriteTo.File(
         path: Path.Combine(logDir, "agent-.log"),
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 7,
-        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+        outputTemplate: LogTemplate)
     .CreateLogger();
 
 try
