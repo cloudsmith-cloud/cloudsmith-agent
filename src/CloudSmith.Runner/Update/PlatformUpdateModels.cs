@@ -39,3 +39,28 @@ public sealed record PlatformUpdateResult(
 public sealed record UpdateState(
     [property: JsonPropertyName("previousVersion")] string? PreviousVersion,
     [property: JsonPropertyName("updatedAtUtc")]    DateTimeOffset UpdatedAtUtc);
+
+// ---------------------------------------------------------------------------
+// Agent self-update wire shapes  (AB#1951)
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// Command delivered by the Relay to trigger an in-place self-update of the
+/// CloudSmith Agent Windows Service binary.
+/// Fetched via GET /lan/v1/agents/{agentId}/agent-update.
+/// </summary>
+public sealed record AgentUpdateCommand(
+    [property: JsonPropertyName("updateId")]    Guid    UpdateId,
+    [property: JsonPropertyName("version")]     string  Version,
+    [property: JsonPropertyName("downloadUrl")] string? DownloadUrl);
+
+/// <summary>
+/// Final result posted to the Relay after the agent self-update script is
+/// launched (or fails to launch).
+/// Posted to POST /lan/v1/agents/{agentId}/agent-update/{updateId}/result.
+/// </summary>
+public sealed record AgentUpdateResult(
+    [property: JsonPropertyName("updateId")]  Guid    UpdateId,
+    [property: JsonPropertyName("succeeded")] bool    Succeeded,
+    [property: JsonPropertyName("version")]   string? Version,
+    [property: JsonPropertyName("error")]     string? Error);

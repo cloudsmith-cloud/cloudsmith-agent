@@ -207,17 +207,23 @@ try
     // Platform update worker — singleton so EnrollmentHostedService can call SetIdentity on it.
     builder.Services.AddSingleton<PlatformUpdateWorker>();
 
+    // Agent self-update worker — singleton so EnrollmentHostedService can call SetIdentity on it.
+    // AB#1951
+    builder.Services.AddSingleton<AgentSelfUpdateWorker>();
+
     // Watchdog — singleton so RelayPusher can notify it via SetWatchdog (AB#1455).
     builder.Services.AddSingleton<WatchdogWorker>();
 
-    // Enrollment hosted service runs first and sets identity on RelayPusher + JobWorker + PlatformUpdateWorker.
+    // Enrollment hosted service runs first and sets identity on RelayPusher + JobWorker +
+    // PlatformUpdateWorker + AgentSelfUpdateWorker.
     builder.Services.AddHostedService<EnrollmentHostedService>();
 
-    // Heartbeat, inventory, job, platform-update, and watchdog workers.
+    // Heartbeat, inventory, job, platform-update, agent-self-update, and watchdog workers.
     builder.Services.AddHostedService<HeartbeatWorker>();
     builder.Services.AddHostedService<InventoryWorker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<JobWorker>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<PlatformUpdateWorker>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<AgentSelfUpdateWorker>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchdogWorker>());
 
     var host = builder.Build();

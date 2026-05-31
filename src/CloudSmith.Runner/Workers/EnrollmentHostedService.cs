@@ -18,7 +18,8 @@ namespace CloudSmith.Runner.Workers;
 /// receive their StartAsync call.
 ///
 /// After enrollment the resulting identity is injected into <see cref="RelayPusher"/>,
-/// <see cref="JobWorker"/>, and <see cref="PlatformUpdateWorker"/>
+/// <see cref="JobWorker"/>, <see cref="PlatformUpdateWorker"/>, and
+/// <see cref="AgentSelfUpdateWorker"/>
 /// so all subsequent HTTP calls carry the correct agentId + secret.
 /// </summary>
 public sealed class EnrollmentHostedService : IHostedService
@@ -27,6 +28,7 @@ public sealed class EnrollmentHostedService : IHostedService
     private readonly RelayPusher _pusher;
     private readonly JobWorker _jobWorker;
     private readonly PlatformUpdateWorker _updateWorker;
+    private readonly AgentSelfUpdateWorker _selfUpdateWorker;
     private readonly WatchdogWorker _watchdog;
     private readonly ILogger<EnrollmentHostedService> _logger;
 
@@ -35,6 +37,7 @@ public sealed class EnrollmentHostedService : IHostedService
         RelayPusher pusher,
         JobWorker jobWorker,
         PlatformUpdateWorker updateWorker,
+        AgentSelfUpdateWorker selfUpdateWorker,
         WatchdogWorker watchdog,
         ILogger<EnrollmentHostedService> logger)
     {
@@ -42,6 +45,7 @@ public sealed class EnrollmentHostedService : IHostedService
         _pusher           = pusher;
         _jobWorker        = jobWorker;
         _updateWorker     = updateWorker;
+        _selfUpdateWorker = selfUpdateWorker;
         _watchdog         = watchdog;
         _logger           = logger;
     }
@@ -68,6 +72,7 @@ public sealed class EnrollmentHostedService : IHostedService
                 _pusher.SetIdentity(identity);
                 _jobWorker.SetIdentity(identity);
                 _updateWorker.SetIdentity(identity);
+                _selfUpdateWorker.SetIdentity(identity);
                 _logger.LogInformation(
                     "Enrollment complete: agentId={AgentId}", identity.AgentId);
                 return;
@@ -93,6 +98,7 @@ public sealed class EnrollmentHostedService : IHostedService
         _pusher.SetIdentity(id);
         _jobWorker.SetIdentity(id);
         _updateWorker.SetIdentity(id);
+        _selfUpdateWorker.SetIdentity(id);
         _watchdog.RecordHeartbeat();
     }
 
